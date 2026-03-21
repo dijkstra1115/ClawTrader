@@ -16,8 +16,8 @@ RSS_FEEDS = {
         "https://coindesk.com/arc/outboundfeeds/rss/",
     ],
     "gold": [
-        "https://www.kitco.com/feed/rss/news/gold",
-        "https://www.fxstreet.com/rss/gold",
+        "https://news.google.com/rss/search?q=gold+price+XAU&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=gold+market+analysis&hl=en-US&gl=US&ceid=US:en",
     ],
 }
 

@@ -7,7 +7,13 @@ Modes:
   python -m threads_bot.bot --dry    # Generate post but don't publish
 """
 import sys
+import io
 from datetime import datetime
+
+# Fix Windows console encoding for emoji/CJK output
+if sys.stdout.encoding and sys.stdout.encoding.lower().startswith("cp"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 from .news_fetcher import fetch_all_news
 from .technical_analysis import analyze_all
