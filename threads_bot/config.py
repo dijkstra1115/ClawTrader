@@ -21,5 +21,5 @@ POST_TIMES = os.getenv("POST_TIMES", "08:00").split(",")
 # Timezone
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Taipei")
 
-# Data sources
-COINGECKO_API_BASE = "https://api.coingecko.com/api/v3"
+# Chart source
+CHART_URL = "https://velo.xyz/chart"

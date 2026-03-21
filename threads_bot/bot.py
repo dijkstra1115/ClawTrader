@@ -1,6 +1,6 @@
 """
 ClawTrader Threads Bot - Main entry point.
-Pipeline: Kiyotaka screenshot -> Claude vision analysis -> news -> generate post -> publish
+Pipeline: velo.xyz screenshot -> Claude vision analysis -> news -> generate post -> publish
 
 Modes:
   python -m threads_bot          # Run scheduler (continuous)
@@ -31,8 +31,8 @@ def create_and_post(dry_run: bool = False) -> None:
     print(f"[bot] ClawTrader starting at {datetime.now()}")
     print(f"{'='*50}")
 
-    # Step 1: Capture BTC H1 chart from Kiyotaka.ai (with CVD + OI)
-    print("[bot] Capturing BTC H1 chart from Kiyotaka.ai...")
+    # Step 1: Capture BTC H1 chart from velo.xyz (with CVD + OI)
+    print("[bot] Capturing BTC H1 chart from velo.xyz...")
     chart_path = capture_btc_chart_sync()
     if not chart_path:
         print("[bot] ERROR: Failed to capture chart, aborting")

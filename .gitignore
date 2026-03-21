@@ -8,4 +8,5 @@ venv/
 dist/
 build/
 .claude/
+.playwright-mcp/
 charts/
