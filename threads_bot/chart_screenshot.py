@@ -1,6 +1,6 @@
 """
-Take screenshots of Kiyotaka.ai H1 charts using Playwright.
-Captures professional-grade charts with volume profile for Claude analysis.
+Take H1 chart screenshot of BTC from Kiyotaka.ai with CVD + OI indicators.
+Uses Playwright with ANGLE GPU backend for WebGL rendering.
 """
 import os
 import asyncio
@@ -8,71 +8,43 @@ from typing import Optional, Dict
 from playwright.async_api import async_playwright
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "charts")
-
 KIYOTAKA_BASE = "https://chart.kiyotaka.ai"
 
-# Assets to screenshot: (display_name, search_term, filename)
-ASSETS = [
-    ("Bitcoin", "BTCUSDT", "btc_kiyotaka.png"),
-    ("Gold", "XAUUSD", "gold_kiyotaka.png"),
+# Indicators to add via the Indicators panel search
+INDICATORS = [
+    "CVD Flow Dominance",
+    "Open Interest Delta",
 ]
 
 TIMEFRAME = "1h"
 
 
-async def _dismiss_dialogs(page):
-    """Close any popups, error dialogs, or overlays on Kiyotaka using JS removal."""
+async def _dismiss_overlays(page):
+    """Force-remove all dialog overlays and guest banners via JS."""
     try:
-        # Force-remove ALL dialog overlays via JavaScript
         removed = await page.evaluate("""() => {
             let count = 0;
-            // Remove dialog overlays
-            document.querySelectorAll('.dialog-overlay, [class*="dialog-overlay"]').forEach(el => {
-                el.remove();
-                count++;
-            });
-            // Remove modal backdrops
-            document.querySelectorAll('[class*="modal"], [class*="backdrop"]').forEach(el => {
-                if (el.style) el.style.display = 'none';
-                count++;
-            });
-            // Remove guest notification banners
-            document.querySelectorAll('[class*="guest"], [class*="notification-bar"]').forEach(el => {
-                el.remove();
-                count++;
-            });
+            document.querySelectorAll(
+                '.dialog-overlay, [class*="dialog-overlay"], [class*="notification"]'
+            ).forEach(el => { el.remove(); count++; });
             return count;
         }""")
         if removed:
-            print(f"[screenshot] Removed {removed} overlay(s) via JS")
+            print(f"[screenshot] Removed {removed} overlay(s)")
         await page.wait_for_timeout(500)
     except Exception as e:
-        print(f"[screenshot] Dialog dismiss error: {e}")
+        print(f"[screenshot] Overlay dismiss error: {e}")
 
 
-async def _wait_for_chart_ready(page, timeout: int = 30000):
-    """Wait until the chart canvas is rendered and has content."""
+async def _wait_for_chart(page):
+    """Wait until WebGL chart canvas has rendered content."""
     try:
-        # Wait for canvas to appear
-        await page.wait_for_selector("canvas", timeout=timeout)
-
-        # Poll until the canvas actually has drawn content (non-blank)
+        await page.wait_for_selector("canvas", timeout=30000)
         for _ in range(15):
             has_content = await page.evaluate("""() => {
-                const canvases = document.querySelectorAll('canvas');
-                for (const c of canvases) {
+                const cs = document.querySelectorAll('canvas');
+                for (const c of cs) {
                     if (c.width > 400 && c.height > 200) {
-                        const ctx = c.getContext('2d');
-                        if (ctx) {
-                            const data = ctx.getImageData(
-                                Math.floor(c.width/2), Math.floor(c.height/2), 10, 10
-                            ).data;
-                            // Check if center pixels are non-black/non-transparent
-                            for (let i = 0; i < data.length; i += 4) {
-                                if (data[i] > 5 || data[i+1] > 5 || data[i+2] > 5) return true;
-                            }
-                        }
-                        // For WebGL canvases, check if gl context exists
                         const gl = c.getContext('webgl') || c.getContext('webgl2');
                         if (gl) return true;
                     }
@@ -80,234 +52,99 @@ async def _wait_for_chart_ready(page, timeout: int = 30000):
                 return false;
             }""")
             if has_content:
-                print("[screenshot] Chart canvas has content")
-                # Extra wait for final render
                 await page.wait_for_timeout(2000)
                 return
             await page.wait_for_timeout(2000)
-
-        # Even if detection failed, wait generously for WebGL render
-        print("[screenshot] Canvas content check inconclusive, waiting extra...")
         await page.wait_for_timeout(5000)
-    except Exception as e:
-        print(f"[screenshot] Chart ready check: {e}, waiting fallback...")
+    except Exception:
         await page.wait_for_timeout(8000)
 
 
-async def _set_symbol(page, search_term: str):
-    """Search and select a trading symbol on Kiyotaka."""
+async def _add_indicators(page):
+    """Open Indicators panel and add CVD + OI indicators."""
     try:
-        await _dismiss_dialogs(page)
-
-        # Click on the symbol/ticker area at the top-left to open search
-        symbol_selectors = [
-            '[class*="symbol-info"]',
-            '[class*="ticker"]',
-            '[class*="symbol"] span',
-            '[class*="pair-name"]',
-            '[class*="instrument"]',
-        ]
-        opened = False
-        for sel in symbol_selectors:
-            elem = await page.query_selector(sel)
-            if elem and await elem.is_visible():
-                await elem.click(force=True, timeout=5000)
-                await page.wait_for_timeout(1500)
-                opened = True
-                break
-
-        if not opened:
-            # Fallback: try clicking on the BTCUSDT text directly
-            btc_text = await page.query_selector('text="BTCUSDT"')
-            if btc_text:
-                await btc_text.click(force=True, timeout=3000)
-                await page.wait_for_timeout(1500)
-
-        await _dismiss_dialogs(page)
-
-        # Find the search input that appeared
-        search_input = None
-        input_selectors = [
-            'input[placeholder*="earch"]',
-            'input[placeholder*="ymbol"]',
-            'input[type="text"]',
-            'input[type="search"]',
-        ]
-        for sel in input_selectors:
-            elems = await page.query_selector_all(sel)
-            for elem in elems:
-                if await elem.is_visible():
-                    search_input = elem
-                    break
-            if search_input:
-                break
-
-        if search_input:
-            # Clear and type
-            await search_input.click(force=True)
-            await search_input.fill("")
-            await search_input.type(search_term, delay=80)
-        else:
-            # Just type into the page
-            await page.keyboard.type(search_term, delay=80)
-
+        ind_btn = await page.query_selector("button.indicators-button")
+        if not ind_btn:
+            print("[screenshot] Indicators button not found")
+            return
+        await ind_btn.click(force=True)
         await page.wait_for_timeout(2000)
 
-        # Click first search result
-        result_selectors = [
-            '[class*="search-result"] >> nth=0',
-            '[class*="symbol-list"] >> nth=0',
-            '[class*="search"] li >> nth=0',
-            '[class*="dropdown"] [class*="item"] >> nth=0',
-        ]
-        clicked = False
-        for sel in result_selectors:
-            try:
-                elem = await page.query_selector(sel)
-                if elem and await elem.is_visible():
-                    await elem.click(force=True, timeout=3000)
-                    clicked = True
-                    break
-            except:
-                continue
-
-        if not clicked:
-            await page.keyboard.press("Enter")
-
-        await page.wait_for_timeout(3000)
-        print(f"[screenshot] Symbol set to {search_term}")
-
-    except Exception as e:
-        print(f"[screenshot] Could not set symbol to {search_term}: {e}")
-
-
-async def _set_timeframe(page, timeframe: str):
-    """Set the chart timeframe."""
-    try:
-        await _dismiss_dialogs(page)
-
-        # Force-click the timeframe button
-        tf_btn = await page.query_selector(f'button:has-text("{timeframe}")')
-        if tf_btn and await tf_btn.is_visible():
-            await tf_btn.click(force=True, timeout=5000)
-            await page.wait_for_timeout(2000)
-            print(f"[screenshot] Timeframe set to {timeframe}")
+        search = await page.query_selector('input[placeholder*="Search scripts"]')
+        if not search:
+            print("[screenshot] Indicator search input not found")
+            await page.keyboard.press("Escape")
             return
 
-        tf_selectors = [
-            f'[class*="timeframe"] button:has-text("{timeframe}")',
-            f'[class*="resolution"] :has-text("{timeframe}")',
-            f'span:text-is("{timeframe}")',
-        ]
-        for sel in tf_selectors:
-            try:
-                elem = await page.query_selector(sel)
-                if elem and await elem.is_visible():
-                    await elem.click(force=True, timeout=5000)
-                    await page.wait_for_timeout(2000)
-                    print(f"[screenshot] Timeframe set to {timeframe}")
-                    return
-            except:
-                continue
+        for indicator_name in INDICATORS:
+            await search.fill(indicator_name)
+            await page.wait_for_timeout(2000)
+            first_row = await page.query_selector('[class*="script-row"]:first-child')
+            if first_row and await first_row.is_visible():
+                await first_row.click(force=True)
+                await page.wait_for_timeout(1000)
+                print(f"[screenshot] Added indicator: {indicator_name}")
+            else:
+                print(f"[screenshot] Indicator not found: {indicator_name}")
 
-        print(f"[screenshot] Could not find timeframe button for {timeframe}")
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(1000)
+    except Exception as e:
+        print(f"[screenshot] Add indicators error: {e}")
+        await page.keyboard.press("Escape")
 
+
+async def _set_timeframe(page):
+    """Set chart to H1 timeframe."""
+    try:
+        await _dismiss_overlays(page)
+        tf_btn = await page.query_selector(f'button:has-text("{TIMEFRAME}")')
+        if tf_btn and await tf_btn.is_visible():
+            await tf_btn.click(force=True)
+            await page.wait_for_timeout(3000)
+            print(f"[screenshot] Timeframe: {TIMEFRAME}")
     except Exception as e:
         print(f"[screenshot] Timeframe error: {e}")
 
 
-async def _capture_chart(page, filename: str) -> Optional[str]:
-    """Take a screenshot of the chart area."""
+async def _capture_largest_canvas(page, filename: str) -> Optional[str]:
+    """Screenshot the largest canvas element (the main chart)."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     filepath = os.path.join(OUTPUT_DIR, filename)
 
     try:
-        await _dismiss_dialogs(page)
-
-        # Try to find the main chart canvas
+        await _dismiss_overlays(page)
         canvases = await page.query_selector_all("canvas")
-        chart_canvas = None
+        best = None
         max_area = 0
-
-        for canvas in canvases:
-            box = await canvas.bounding_box()
-            if box:
+        for c in canvases:
+            box = await c.bounding_box()
+            if box and box["width"] > 400 and box["height"] > 200:
                 area = box["width"] * box["height"]
-                if area > max_area and box["width"] > 400 and box["height"] > 200:
+                if area > max_area:
                     max_area = area
-                    chart_canvas = canvas
+                    best = c
 
-        if chart_canvas:
-            await chart_canvas.screenshot(path=filepath)
-            print(f"[screenshot] Chart canvas captured: {filepath}")
+        if best:
+            await best.screenshot(path=filepath)
+            print(f"[screenshot] Chart captured: {filepath}")
         else:
-            # Fallback: screenshot the viewport
             await page.screenshot(path=filepath)
             print(f"[screenshot] Viewport captured: {filepath}")
-
         return filepath
-
     except Exception as e:
         print(f"[screenshot] Capture failed: {e}")
         return None
 
 
-async def _take_chart_screenshot(page, search_term: str, filename: str) -> Optional[str]:
-    """Full flow for a single asset: navigate -> set symbol -> set timeframe -> screenshot."""
-    try:
-        # Navigate fresh for each asset
-        await page.goto(KIYOTAKA_BASE, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(5000)
+async def capture_btc_chart() -> Optional[str]:
+    """
+    Full flow: launch browser -> load Kiyotaka -> add CVD + OI
+    -> set H1 timeframe -> wait for render -> screenshot.
 
-        # Force-remove ALL overlays immediately via JS
-        await _dismiss_dialogs(page)
-
-        # Check if we got an error page
-        error_text = await page.query_selector('text="something went wrong"')
-        if error_text:
-            print(f"[screenshot] Kiyotaka error page detected")
-            # Try "Create new workspace" button with force click
-            new_ws_btn = await page.query_selector('button:has-text("Create new workspace")')
-            if new_ws_btn:
-                await new_ws_btn.click(force=True, timeout=5000)
-                await page.wait_for_timeout(5000)
-                await _dismiss_dialogs(page)
-            else:
-                # Try clicking Refresh with force
-                refresh_btn = await page.query_selector('button:has-text("Refresh")')
-                if refresh_btn:
-                    await refresh_btn.click(force=True, timeout=5000)
-                    await page.wait_for_timeout(5000)
-                    await _dismiss_dialogs(page)
-                else:
-                    await page.reload(wait_until="domcontentloaded", timeout=30000)
-                    await page.wait_for_timeout(5000)
-                    await _dismiss_dialogs(page)
-
-        # Set symbol and timeframe
-        await _set_symbol(page, search_term)
-        await _dismiss_dialogs(page)
-        await _set_timeframe(page, TIMEFRAME)
-
-        # Wait for chart to render
-        await _wait_for_chart_ready(page)
-        await _dismiss_dialogs(page)
-
-        # Capture
-        return await _capture_chart(page, filename)
-
-    except Exception as e:
-        print(f"[screenshot] Failed for {search_term}: {e}")
-        return None
-
-
-async def capture_all_charts() -> Dict[str, str]:
-    """Capture H1 chart screenshots for BTC and Gold from Kiyotaka.ai."""
-    results = {}
-
+    Returns the filepath of the saved chart image.
+    """
     async with async_playwright() as p:
-        # Must use headed mode with ANGLE for WebGL chart rendering
-        # Window is placed offscreen to simulate headless
         browser = await p.chromium.launch(
             headless=False,
             args=[
@@ -324,22 +161,51 @@ async def capture_all_charts() -> Dict[str, str]:
         )
         page = await context.new_page()
 
-        for name, search_term, filename in ASSETS:
-            key = "bitcoin" if "BTC" in search_term else "gold"
-            filepath = await _take_chart_screenshot(page, search_term, filename)
-            if filepath:
-                results[key] = filepath
+        try:
+            await page.goto(KIYOTAKA_BASE, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(8000)
+            await _dismiss_overlays(page)
 
-        await browser.close()
+            # Handle error page
+            error = await page.query_selector('text="something went wrong"')
+            if error:
+                btn = await page.query_selector('button:has-text("Create new workspace")')
+                if btn:
+                    await btn.click(force=True)
+                    await page.wait_for_timeout(5000)
+                else:
+                    await page.reload(wait_until="domcontentloaded", timeout=30000)
+                    await page.wait_for_timeout(5000)
+                await _dismiss_overlays(page)
 
-    return results
+            # Default symbol is BTCUSDT on Binance Futures — perfect
+            # Add CVD + OI indicators
+            await _add_indicators(page)
+            await _dismiss_overlays(page)
+
+            # Set H1 timeframe
+            await _set_timeframe(page)
+
+            # Wait for chart render
+            await _wait_for_chart(page)
+            await _dismiss_overlays(page)
+
+            # Capture
+            filepath = await _capture_largest_canvas(page, "btc_h1.png")
+            return filepath
+
+        except Exception as e:
+            print(f"[screenshot] Fatal error: {e}")
+            return None
+        finally:
+            await browser.close()
 
 
-def capture_charts_sync() -> Dict[str, str]:
-    """Synchronous wrapper for capture_all_charts."""
-    return asyncio.run(capture_all_charts())
+def capture_btc_chart_sync() -> Optional[str]:
+    """Synchronous wrapper."""
+    return asyncio.run(capture_btc_chart())
 
 
 if __name__ == "__main__":
-    charts = capture_charts_sync()
-    print(f"Captured charts: {charts}")
+    path = capture_btc_chart_sync()
+    print(f"Chart: {path}")

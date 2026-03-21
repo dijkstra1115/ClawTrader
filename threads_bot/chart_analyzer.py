@@ -1,51 +1,52 @@
 """
-Use Claude's vision capability to analyze Kiyotaka.ai chart screenshots.
-Extracts support/resistance, patterns, and trading insights from chart images.
+Use Claude's vision to fully analyze Kiyotaka.ai BTC chart screenshots.
+No numeric data fetching — Claude does all analysis from the chart image.
 """
 import base64
 import anthropic
-from typing import Dict
+from typing import Optional
 
 from .config import ANTHROPIC_API_KEY
 
-CHART_ANALYSIS_PROMPT = """你是一位專業的技術分析師。請仔細分析這張 H1 K線圖，並提供以下資訊：
+ANALYSIS_PROMPT = """你是 ClawTrader 的首席技術分析師。請仔細分析這張來自 Kiyotaka.ai 的 BTC/USDT H1 K線圖。
 
-1. **支撐與阻力位**：從圖表中識別出關鍵的支撐和阻力價位
-2. **趨勢判斷**：目前是上升趨勢、下降趨勢還是盤整？
-3. **K線形態**：是否有明顯的 K 線形態（如錘子線、吞噬、十字星等）？
-4. **成交量分析**：成交量是否配合價格走勢？
-5. **關鍵觀察**：任何值得注意的技術訊號
+圖表上可能包含以下資訊：
+- K線（蠟燭圖）：開高低收價格
+- 成交量柱狀圖
+- CVD (Cumulative Volume Delta)：主動買賣力道
+- OI (Open Interest Delta)：未平倉合約變化
 
-請用繁體中文回答，簡潔扼要，重點突出。總字數控制在 200 字以內。
+請提供完整分析：
+
+1. **當前價格與走勢**：目前價格、近期趨勢方向
+2. **支撐與阻力位**：從 K 線圖中辨識出的關鍵價位
+3. **K線形態**：近期是否有重要的 K 線形態（錘子線、吞噬、十字星、頭肩等）
+4. **成交量分析**：成交量是否配合價格走勢、有無量能背離
+5. **CVD 分析**（如圖上有顯示）：主動買單還是賣單主導、CVD 與價格是否背離
+6. **OI 分析**（如圖上有顯示）：持倉量變化趨勢、是否有異常增減
+7. **綜合研判**：多空力道對比、短期可能的走勢方向
+8. **風險提示**：需要注意的風險因素
+
+使用繁體中文回答，專業但簡潔。
 """
 
 
-def encode_image(image_path: str) -> str:
-    """Read and base64-encode an image file."""
-    with open(image_path, "rb") as f:
-        return base64.standard_b64encode(f.read()).decode("utf-8")
-
-
-def analyze_single_chart(image_path: str, asset_name: str) -> str:
+def analyze_chart(image_path: str) -> str:
     """
-    Send a chart screenshot to Claude for visual analysis.
-    Returns the analysis text.
+    Send BTC chart screenshot to Claude for complete visual analysis.
+    Returns the full analysis text.
     """
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    image_data = encode_image(image_path)
+    with open(image_path, "rb") as f:
+        image_data = base64.standard_b64encode(f.read()).decode("utf-8")
 
-    # Determine media type
     ext = image_path.lower().rsplit(".", 1)[-1]
-    media_type = {
-        "png": "image/png",
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-    }.get(ext, "image/png")
+    media_type = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, "image/png")
 
     message = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=512,
+        max_tokens=1500,
         messages=[{
             "role": "user",
             "content": [
@@ -59,7 +60,7 @@ def analyze_single_chart(image_path: str, asset_name: str) -> str:
                 },
                 {
                     "type": "text",
-                    "text": f"這是 {asset_name} 的 H1 K線圖（來自 Kiyotaka.ai）。\n\n{CHART_ANALYSIS_PROMPT}",
+                    "text": ANALYSIS_PROMPT,
                 },
             ],
         }],
@@ -68,42 +69,10 @@ def analyze_single_chart(image_path: str, asset_name: str) -> str:
     return message.content[0].text
 
 
-def analyze_charts_with_claude(chart_paths: Dict[str, str]) -> Dict[str, str]:
-    """
-    Analyze all chart screenshots with Claude vision.
-
-    Args:
-        chart_paths: dict mapping asset key ('bitcoin', 'gold') to image file path
-
-    Returns:
-        dict mapping asset key to Claude's analysis text
-    """
-    results = {}
-
-    asset_names = {
-        "bitcoin": "Bitcoin (BTC/USDT)",
-        "gold": "Gold (XAU/USD)",
-    }
-
-    for key, path in chart_paths.items():
-        name = asset_names.get(key, key)
-        print(f"[chart_analyzer] Analyzing {name} chart...")
-        try:
-            analysis = analyze_single_chart(path, name)
-            results[key] = analysis
-            print(f"[chart_analyzer] {name} analysis complete ({len(analysis)} chars)")
-        except Exception as e:
-            print(f"[chart_analyzer] Failed to analyze {name}: {e}")
-            results[key] = f"圖表分析暫時無法取得"
-
-    return results
-
-
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
-        path = sys.argv[1]
-        result = analyze_single_chart(path, "Test Asset")
+        result = analyze_chart(sys.argv[1])
         print(result)
     else:
         print("Usage: python -m threads_bot.chart_analyzer <image_path>")
