@@ -138,7 +138,7 @@ def calculate_rsi(df: pd.DataFrame, period: int = 14) -> Optional[float]:
 def analyze_asset(symbol: str, name: str) -> Dict:
     """
     Full H1 analysis for a single asset.
-    Returns support/resistance, trend, RSI, and current price.
+    Returns support/resistance, trend, RSI, current price, and raw DataFrame.
     """
     if symbol == "GOLD":
         df = fetch_h1_ohlcv_gold()
@@ -164,11 +164,12 @@ def analyze_asset(symbol: str, name: str) -> Dict:
         "resistance": sr_levels["resistance"],
         "trend": trend,
         "rsi": rsi,
+        "dataframe": df,  # raw H1 OHLCV for chart generation
     }
 
 
 def analyze_all() -> Dict:
-    """Run H1 analysis for both BTC and Gold."""
+    """Run H1 analysis for both BTC and Gold. Returns analysis with raw DataFrames."""
     btc = analyze_asset("BTCUSDT", "Bitcoin (BTC)")
     gold = analyze_asset("GOLD", "Gold (XAU)")
     return {"bitcoin": btc, "gold": gold}
