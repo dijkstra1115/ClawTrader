@@ -40,6 +40,8 @@ POST_PROMPT_TEMPLATE = """請根據以下市場數據和新聞，撰寫今日的
 - 趨勢: {gold_trend}
 - RSI(14): {gold_rsi}
 
+{chart_visual_section}
+
 ## 最新新聞
 
 ### Bitcoin 相關新聞
@@ -48,7 +50,7 @@ POST_PROMPT_TEMPLATE = """請根據以下市場數據和新聞，撰寫今日的
 ### Gold 相關新聞
 {gold_news}
 
-請根據以上資訊撰寫分析貼文。
+請綜合以上數據分析與圖表視覺分析，撰寫分析貼文。
 """
 
 
@@ -64,12 +66,22 @@ def format_news_items(news_list: list) -> str:
     return "\n".join(lines) if lines else "- 暫無最新新聞"
 
 
-def build_prompt(analysis: Dict, news: Dict) -> str:
-    """Build the prompt for Claude API from analysis and news data."""
+def build_prompt(analysis: Dict, news: Dict, chart_analysis: Dict = None) -> str:
+    """Build the prompt for Claude API from analysis, news, and chart visual analysis."""
     btc = analysis.get("bitcoin", {})
     gold = analysis.get("gold", {})
     btc_news = news.get("bitcoin", {}).get("news", [])
     gold_news = news.get("gold", {}).get("news", [])
+
+    # Build chart visual analysis section
+    chart_visual_section = ""
+    if chart_analysis:
+        lines = ["## Claude 圖表視覺分析（來自 Kiyotaka.ai K線圖）"]
+        if "bitcoin" in chart_analysis:
+            lines.append(f"\n### BTC 圖表分析\n{chart_analysis['bitcoin']}")
+        if "gold" in chart_analysis:
+            lines.append(f"\n### Gold 圖表分析\n{chart_analysis['gold']}")
+        chart_visual_section = "\n".join(lines)
 
     return POST_PROMPT_TEMPLATE.format(
         btc_price=btc.get("current_price", "N/A"),
@@ -88,16 +100,18 @@ def build_prompt(analysis: Dict, news: Dict) -> str:
         gold_rsi=gold.get("rsi", "N/A"),
         btc_news=format_news_items(btc_news),
         gold_news=format_news_items(gold_news),
+        chart_visual_section=chart_visual_section,
     )
 
 
-def generate_post(analysis: Dict, news: Dict) -> str:
+def generate_post(analysis: Dict, news: Dict, chart_analysis: Dict = None) -> str:
     """
     Generate a Threads post using Claude API.
+    Optionally includes visual chart analysis from Kiyotaka screenshots.
     Returns the post text ready to publish.
     """
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    prompt = build_prompt(analysis, news)
+    prompt = build_prompt(analysis, news, chart_analysis)
 
     message = client.messages.create(
         model="claude-sonnet-4-20250514",

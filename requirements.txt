@@ -7,3 +7,4 @@ numpy>=1.24.0
 pytz>=2023.3
 mplfinance>=0.12.10
 matplotlib>=3.7.0
+playwright>=1.40.0
