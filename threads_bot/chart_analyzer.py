@@ -40,7 +40,7 @@ def analyze_chart(image_path: str) -> str:
     media_type = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, "image/png")
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-opus-4-6",
         max_tokens=1500,
         messages=[{
             "role": "user",

@@ -10,24 +10,29 @@ from typing import Optional, List
 from .config import THREADS_USER_ID, THREADS_ACCESS_TOKEN, THREADS_API_BASE
 
 
-def upload_image_to_imgbb(image_path: str) -> Optional[str]:
+def upload_image(image_path: str) -> Optional[str]:
     """
-    Upload an image to imgBB (free, no API key needed for temp uploads).
-    Falls back to 0x0.st if imgBB fails.
+    Upload an image to freeimage.host (free, no account needed).
     Returns the public URL of the uploaded image.
     """
-    # Try 0x0.st (simple, no key needed)
+    import base64
     try:
         with open(image_path, "rb") as f:
-            resp = requests.post(
-                "https://0x0.st",
-                files={"file": f},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            url = resp.text.strip()
-            print(f"[threads] Uploaded image: {url}")
-            return url
+            img_data = base64.b64encode(f.read()).decode("utf-8")
+
+        resp = requests.post(
+            "https://freeimage.host/api/1/upload",
+            data={
+                "key": "6d207e02198a847aa98d0a2a901485a5",
+                "source": img_data,
+                "format": "json",
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        url = resp.json()["image"]["url"]
+        print(f"[threads] Uploaded image: {url}")
+        return url
     except Exception as e:
         print(f"[threads] Image upload failed: {e}")
         return None
@@ -176,7 +181,7 @@ def post_to_threads(text: str, chart_paths: List[str] = None) -> Optional[str]:
         # Upload images first
         image_urls = []
         for path in chart_paths:
-            url = upload_image_to_imgbb(path)
+            url = upload_image(path)
             if url:
                 image_urls.append(url)
 
